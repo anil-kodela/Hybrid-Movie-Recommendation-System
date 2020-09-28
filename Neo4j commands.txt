@@ -1,0 +1,118 @@
+// Run the queries in the same order as they appear
+
+// To load the dataset, use the below path structure
+
+// path = "file:///<exact_file_path.extension>"
+
+// Eg: path = "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/users.csv"
+
+// First comment "dbms.directories.import=import" in the Neo4j Project settings option to load dataset
+
+// To create user node
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/users.csv" AS row
+FIELDTERMINATOR ","
+CREATE (:Users {userId: row.userId});
+
+
+// To create movies node
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/movies.csv" AS row
+FIELDTERMINATOR ","
+CREATE (:Movies {movieId: row.movieId, title: row.title, rating_avg: row.rating_avg});
+
+
+// To create genres node
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/genres.csv" AS row
+FIELDTERMINATOR ","
+CREATE (:Genres {genres: row.genres});
+
+
+// To create user_age_groups node
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/user_age_groups.csv" AS row
+FIELDTERMINATOR ","
+CREATE (:AgeGroups {ageGroup: row.age_group});
+
+
+// Index users for better performance
+CREATE INDEX ON :Users(userId);
+
+
+// Index movies for better performance
+CREATE INDEX ON :Movies(movieId);
+
+
+// Create relationship between user and movies with respect to Watched property
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/movies_by_users.csv" AS row
+FIELDTERMINATOR ","
+MATCH (user:Users {userId: row.userId})
+MATCH (movie:Movies {movieId: row.movieId})
+MERGE (user)-[:HAS_WATCHED {rating: row.rating}]->(movie);
+
+
+// Create relationship between user and genres with respect to Favorite property
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/users_favorite_genres.csv" AS row
+FIELDTERMINATOR ","
+MATCH (user:Users {userId: row.userId})
+MATCH (genres:Genres {genres: row.genre})
+MERGE (user)-[:IS_FAVORITE]->(genres);
+
+
+// Create relationship between movies and genres with respect to genres property
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/movies_genres.csv" AS row
+FIELDTERMINATOR ","
+MATCH (movie:Movies {movieId: row.movieId})
+MATCH (genres:Genres {genres: row.genres})
+MERGE (movie)-[:IS_OF_GENRES]->(genres);
+
+
+// Create relationship between movies with respect to similarity property
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/movies_similarity.csv" AS row
+FIELDTERMINATOR ","
+MATCH (movie1:Movies {movieId: row.movieId})
+MATCH (movie2:Movies {movieId: row.similar_movieId})
+MERGE (movie1)-[:IS_SIMILAR_TO {relevance: row.relevance}]->(movie2);
+
+
+// Create relationship between users with respect to ageGroup property
+LOAD CSV WITH HEADERS FROM "file:///Users/Prajith/Programming/Python/CS6402_Project_Final/cleaned_data/users_by_age.csv" AS row
+FIELDTERMINATOR ","
+MATCH (user:Users {userId: row.userId})
+MATCH (ageGroup:AgeGroups {ageGroup: row.age_group})
+MERGE (user)-[:IS_IN_AGE_GROUP]->(ageGroup);
+
+
+// Query to check movies watched by user
+MATCH path = (u:Users)-[:HAS_WATCHED]->(m1:Movies)
+WHERE u.userId =~"1"
+RETURN u.userId, m1.title, m1.rating_avg
+
+
+// Query to fetch all similar movies 
+MATCH path = (u:Users)-[:HAS_WATCHED]->(m1:Movies)-[s:IS_SIMILAR_TO]->(m2:Movies)
+WHERE u.userId =~"1"
+RETURN u.userId, m1.title, m2.title, m2.rating_avg
+
+
+// Query to fetch all similar movies based on favorite genre
+MATCH path = (u:Users)-[:HAS_WATCHED]->(m1:Movies)-[s:IS_SIMILAR_TO]->(m2:Movies),
+(m2)-[:IS_OF_GENRES]->(g:Genres),
+(u)-[:IS_FAVORITE]->(g)
+WHERE u.userId =~"1"
+RETURN u.userId, g.genres, m1.title, m2.title, m2.rating_avg
+
+
+//All together with age filter
+MATCH (u1:Users)-[:HAS_WATCHED]->(m3:Movies)
+WHERE u1.userId =~"1"
+WITH [i in m3.movieId | i] as movies
+MATCH path = (u:Users)-[:IS_IN_AGE_GROUP]->(a:AgeGroups)
+WHERE u.userId =~"1"
+WITH a as a, movies as movies
+MATCH path = (u:Users)-[:HAS_WATCHED]->(m1:Movies)-[s:IS_SIMILAR_TO]->(m2:Movies),
+(m2)-[:IS_OF_GENRES]->(g:Genres),
+(u)-[:IS_FAVORITE]->(g),
+(u)-[:IS_IN_AGE_GROUP]->(a)
+WHERE u.userId =~"1" and not m2.movieId in movies
+RETURN distinct u.userId as userId, g.genres as genres, 
+m2.title as title, m2.rating_avg as rating, a.ageGroup as ageGroup
+ORDER BY m2.rating_avg descending
+LIMIT 10
